@@ -77,7 +77,7 @@
   </div>
   <div id="canvas-container"><canvas id="game"></canvas></div>
   <button id="shuffleBtn" data-i18n="shuffle">Shuffle</button>
-  <div style="margin-top:10px;opacity:0.4;font-size:0.7em;color:#ecf0f1">v22 <span id="resetBtn" style="cursor:pointer;text-decoration:underline" data-i18n="reset">reset</span></div>
+  <div style="margin-top:10px;opacity:0.4;font-size:0.7em;color:#ecf0f1">v23 <span id="resetBtn" style="cursor:pointer;text-decoration:underline" data-i18n="reset">reset</span></div>
   <div id="overlay" class="hidden">
     <h2 id="overlayTitle"></h2>
     <p id="overlayText"></p>
@@ -98,12 +98,12 @@ const i18n = {
   en: {
     level: 'Level', score: 'Score', moves: 'Moves', shuffle: 'Shuffle', reset: 'reset',
     win: 'Level complete!', lose: 'Out of moves', next: 'Next', retry: 'Retry',
-    scoreText: 'Score:', resetConfirm: 'Reset progress and cache?'
+    scoreText: 'Score:', resetConfirm: 'Reset progress and cache?', noMoves: 'No moves...'
   },
   ru: {
     level: 'Уровень', score: 'Очки', moves: 'Ходы', shuffle: 'Перемешать', reset: 'сброс',
     win: 'Уровень пройден!', lose: 'Ходы кончились', next: 'Далее', retry: 'Заново',
-    scoreText: 'Очки:', resetConfirm: 'Сбросить прогресс и кэш?'
+    scoreText: 'Очки:', resetConfirm: 'Сбросить прогресс и кэш?', noMoves: 'Нет ходов...'
   }
 };
 const lang = navigator.language.startsWith('ru') ? 'ru' : 'en';
@@ -921,11 +921,10 @@ async function checkEndOrShuffle() {
   // Auto-shuffle if no valid moves
   if (!hasValidMoves() && moves > 0) {
     await sleep(300);
-    // Show brief message
     const btn = document.getElementById('shuffleBtn');
-    btn.textContent = 'Нет ходов...';
+    btn.textContent = t.noMoves;
     await sleep(500);
-    btn.textContent = 'Перемешать';
+    btn.textContent = t.shuffle;
     await shuffleBoard();
   }
 }
