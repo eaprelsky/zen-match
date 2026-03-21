@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Zen Match</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon-192.png">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #2c3e50 0%, #1a252f 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #header {
+      color: #ecf0f1;
+      text-align: center;
+      padding: 10px;
+      width: 100%;
+      max-width: 400px;
+    }
+    #header h1 { font-size: 1.5em; font-weight: 300; letter-spacing: 3px; margin-bottom: 5px; }
+    #stats { display: flex; justify-content: space-around; font-size: 0.9em; opacity: 0.9; }
+    #stats span { padding: 5px 10px; }
+    .stat-label { opacity: 0.6; font-size: 0.8em; }
+    #canvas-container { position: relative; touch-action: none; }
+    canvas { border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,0.4); }
+    #overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #ecf0f1; z-index: 100;
+    }
+    #overlay.hidden { display: none; }
+    #overlay h2 { font-size: 2em; font-weight: 300; margin-bottom: 20px; letter-spacing: 2px; }
+    #overlay p { font-size: 1.1em; margin: 10px 0; opacity: 0.8; }
+    #overlay button {
+      margin-top: 30px; padding: 15px 50px; font-size: 1.1em;
+      border: none; border-radius: 30px;
+      background: linear-gradient(135deg, #3498db, #2980b9);
+      color: white; cursor: pointer; transition: transform 0.2s;
+    }
+    #overlay button:hover { transform: scale(1.05); }
+    #shuffleBtn {
+      margin-top: 15px;
+      padding: 10px 25px;
+      font-size: 0.9em;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-radius: 20px;
+      background: transparent;
+      color: #ecf0f1;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    #shuffleBtn:hover { opacity: 1; transform: scale(1.05); }
+    #shuffleBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>ZEN MATCH</h1>
+    <div id="stats">
+      <span><span class="stat-label">Уровень</span><br><span id="level">1</span></span>
+      <span><span class="stat-label">Очки</span><br><span id="score">0</span> / <span id="goal">1000</span></span>
+      <span><span class="stat-label">Ходы</span><br><span id="moves">25</span></span>
+    </div>
+  </div>
+  <div id="canvas-container"><canvas id="game"></canvas></div>
+  <button id="shuffleBtn">Перемешать</button>
+  <div style="margin-top:10px;opacity:0.4;font-size:0.7em;color:#ecf0f1">v21 <span id="resetBtn" style="cursor:pointer;text-decoration:underline">сброс</span></div>
+  <div id="overlay" class="hidden">
+    <h2 id="overlayTitle">Уровень пройден!</h2>
+    <p id="overlayText"></p>
+    <button id="overlayBtn">Далее</button>
+  </div>
+
+<script>
+// ==================== CONFIG ====================
+const ROWS = 8, COLS = 8, TYPES = 6;
+const COLORS = ['#e74c3c', '#2ecc71', '#3498db', '#f39c12', '#9b59b6', '#1abc9c'];
+
+// Special types
+const SP = { NONE: 0, LINE_H: 1, LINE_V: 2, BOMB: 3, PLANE: 4, RAINBOW: 5 };
+const FREEZE = { NONE: 0, LIGHT: 1, HEAVY: 2 };
+
+// ==================== STATE ====================
+let canvas, ctx, CELL;
+let grid = [];
+let level = 1, score = 0, moves = 25, goal = 1000;
+let selected = null, animating = false;
+let blinkCells = [];
+
+// ==================== INIT ====================
+function init() {
+  canvas = document.getElementById('game');
+  ctx = canvas.getContext('2d');
+  resize();
+  window.addEventListener('resize', resize);
+  loadProgress();
+  initLevel();
+  setupInput();
+  requestAnimationFrame(gameLoop);
+}
+
+function resize() {
+  const size = Math.min(window.innerWidth - 20, window.innerHeight - 150, 400);
+  canvas.width = canvas.height = size;
+  CELL = size / COLS;
+}
+
+function initLevel() {
+  score = 0;
+  moves = 20 + Math.floor(Math.sqrt(level) * 4);
+  goal = 1000 + Math.floor(Math.sqrt(level) * 1400);
+  grid = [];
+  
+  for (let r = 0; r < ROWS; r++) {
+    grid[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      let type;
+      do { type = randInt(TYPES); } while (wouldMatch(r, c, type));
+      const freeze = (level >= 2 && Math.random() < 0.05 + level * 0.015) 
+        ? (level >= 4 && Math.random() < 0.5 ? FREEZE.HEAVY : FREEZE.LIGHT) 
+        : FREEZE.NONE;
+      grid[r][c] = { type, sp: SP.NONE, freeze };
+    }
+  }
+  updateUI();
+}
+
+function wouldMatch(r, c, type) {
+  // Check horizontal line of 3
+  if (c >= 2 && grid[r][c-1]?.type === type && grid[r][c-2]?.type === type) return true;
+  // Check vertical line of 3
+  if (r >= 2 && grid[r-1]?.[c]?.type === type && grid[r-2]?.[c]?.type === type) return true;
+  // Check 2x2 square (we fill left-to-right, top-to-bottom)
+  if (r >= 1 && c >= 1 && 
+      grid[r-1]?.[c-1]?.type === type && 
+      grid[r-1]?.[c]?.type === type && 
+      grid[r]?.[c-1]?.type === type) return true;
+  return false;
+}
+
+// ==================== INPUT ====================
+function setupInput() {
+  let startX, startY, startTime;
+  
+  const getCell = (x, y) => {
+    const rect = canvas.getBoundingClientRect();
+    const col = Math.floor((x - rect.left) / CELL);
+    const row = Math.floor((y - rect.top) / CELL);
+    return (row >= 0 && row < ROWS && col >= 0 && col < COLS) ? { r: row, c: col } : null;
+  };
+  
+  const onStart = (x, y) => { startX = x; startY = y; startTime = Date.now(); };
+  
+  const onEnd = (x, y) => {
+    if (animating) return;
+    const cell = getCell(startX, startY);
+    if (!cell) return;
+    
+    const dx = x - startX, dy = y - startY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    
+    // Tap detection
+    if (dist < 10 && Date.now() - startTime < 300) {
+      handleTap(cell.r, cell.c);
+      return;
+    }
+    
+    // Swipe
+    if (dist > 15) {
+      let tr = cell.r, tc = cell.c;
+      if (Math.abs(dx) > Math.abs(dy)) tc += dx > 0 ? 1 : -1;
+      else tr += dy > 0 ? 1 : -1;
+      if (tr >= 0 && tr < ROWS && tc >= 0 && tc < COLS) handleSwap(cell.r, cell.c, tr, tc);
+    }
+  };
+  
+  canvas.addEventListener('mousedown', e => onStart(e.clientX, e.clientY));
+  canvas.addEventListener('mouseup', e => onEnd(e.clientX, e.clientY));
+  canvas.addEventListener('touchstart', e => { e.preventDefault(); onStart(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+  canvas.addEventListener('touchend', e => { e.preventDefault(); onEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY); }, {passive:false});
+  
+  document.getElementById('overlayBtn').onclick = () => {
+    document.getElementById('overlay').classList.add('hidden');
+    if (moves <= 0 && score < goal) initLevel();
+    else { level++; saveProgress(); initLevel(); }
+  };
+  
+  document.getElementById('shuffleBtn').onclick = () => shuffleBoard();
+  
+  document.getElementById('resetBtn').onclick = async () => {
+    if (confirm('Сбросить прогресс и кэш?')) {
+      localStorage.clear();
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const reg of regs) await reg.unregister();
+      const names = await caches.keys();
+      for (const n of names) await caches.delete(n);
+      location.reload(true);
+    }
+  };
+}
+
+// ==================== TAP & SWAP ====================
+async function handleTap(r, c) {
+  const cell = grid[r][c];
+  if (cell.freeze !== FREEZE.NONE) return;
+  
+  // Tap activates any special except RAINBOW
+  if (cell.sp !== SP.NONE && cell.sp !== SP.RAINBOW) {
+    animating = true;
+    moves--;
+    updateUI();
+    await activateSpecial(r, c);
+    await drop();
+    await processMatches();
+    await checkEndOrShuffle();
+    animating = false;
+    return;
+  }
+  
+  // Two-tap swap
+  if (selected) {
+    const dr = Math.abs(selected.r - r), dc = Math.abs(selected.c - c);
+    if ((dr === 1 && dc === 0) || (dr === 0 && dc === 1)) {
+      handleSwap(selected.r, selected.c, r, c);
+    }
+    selected = null;
+  } else {
+    selected = { r, c };
+  }
+}
+
+async function handleSwap(r1, c1, r2, c2) {
+  const a = grid[r1][c1], b = grid[r2][c2];
+  if (a.freeze !== FREEZE.NONE || b.freeze !== FREEZE.NONE) return;
+  
+  animating = true;
+  
+  // Special + Special interaction
+  if (a.sp !== SP.NONE && b.sp !== SP.NONE) {
+    swap(r1, c1, r2, c2);
+    moves--; updateUI();
+    await sleep(100);
+    await handleSpecialCombo(r1, c1, r2, c2);
+    await drop();
+    await processMatches();
+    await checkEndOrShuffle();
+    animating = false;
+    return;
+  }
+  
+  // Rainbow + normal (need swap to know target color)
+  if (a.sp === SP.RAINBOW || b.sp === SP.RAINBOW) {
+    swap(r1, c1, r2, c2);
+    moves--; updateUI();
+    const rainbow = a.sp === SP.RAINBOW ? {r:r1,c:c1} : {r:r2,c:c2};
+    const other = a.sp === SP.RAINBOW ? b : a;
+    await clearColor(other.type, rainbow.r, rainbow.c);
+    await drop();
+    await processMatches();
+    await checkEndOrShuffle();
+    animating = false;
+    return;
+  }
+  
+  // Special (LINE/BOMB/PLANE) + normal = swap, then activate special
+  if (a.sp !== SP.NONE || b.sp !== SP.NONE) {
+    swap(r1, c1, r2, c2);
+    moves--; updateUI();
+    await sleep(100);
+    // Activate the special at its NEW position
+    const specialPos = a.sp !== SP.NONE ? {r:r2,c:c2} : {r:r1,c:c1};
+    const normalPos = a.sp !== SP.NONE ? {r:r1,c:c1} : {r:r2,c:c2};
+    
+    // Exclude normal piece from special's destruction
+    const savedNormal = { ...grid[normalPos.r][normalPos.c] };
+    await activateSpecial(specialPos.r, specialPos.c);
+    
+    // Restore normal piece if it was destroyed
+    if (grid[normalPos.r][normalPos.c].type === -1) {
+      grid[normalPos.r][normalPos.c] = savedNormal;
+    }
+    
+    await drop();
+    await processMatches();
+    await checkEndOrShuffle();
+    animating = false;
+    return;
+  }
+  
+  // Normal swap - check for matches
+  swap(r1, c1, r2, c2);
+  await sleep(100);
+  if (findMatches().length > 0) {
+    moves--; updateUI();
+    await processMatches();
+    await checkEndOrShuffle();
+  } else {
+    swap(r1, c1, r2, c2); // Swap back
+  }
+  animating = false;
+}
+
+function swap(r1, c1, r2, c2) {
+  [grid[r1][c1], grid[r2][c2]] = [grid[r2][c2], grid[r1][c1]];
+}
+
+// ==================== MATCH FINDING ====================
+function findMatches() {
+  const matches = [];
+  const used = new Set();
+  
+  // Find 2x2 squares -> PLANE
+  for (let r = 0; r < ROWS - 1; r++) {
+    for (let c = 0; c < COLS - 1; c++) {
+      const t = grid[r][c].type;
+      if (t < 0) continue;
+      if (grid[r][c+1].type === t &&
+          grid[r+1][c].type === t &&
+          grid[r+1][c+1].type === t) {
+        const cells = [[r,c], [r,c+1], [r+1,c], [r+1,c+1]];
+        const key = cells.map(x => x.join(',')).sort().join('|');
+        if (!used.has(key)) {
+          used.add(key);
+          // Prefer unfrozen cell for special position
+          const unfrozen = cells.filter(([cr,cc]) => grid[cr][cc].freeze === FREEZE.NONE);
+          const spPos = unfrozen.length ? unfrozen[0] : cells[0];
+          matches.push({ cells, type: t, sp: SP.PLANE, spPos });
+        }
+      }
+    }
+  }
+  
+  // Find lines
+  const visited = Array(ROWS).fill(0).map(() => Array(COLS).fill(false));
+  
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (visited[r][c] || grid[r][c].type < 0) continue;
+      const cells = findConnected(r, c, grid[r][c].type, visited);
+      if (cells.length >= 3) {
+        const sp = determineSpecial(cells);
+        // Prefer unfrozen cell for special position
+        const unfrozen = cells.filter(([r,c]) => grid[r][c].freeze === FREEZE.NONE);
+        const spPos = sp.pos || (unfrozen.length ? unfrozen[Math.floor(unfrozen.length/2)] : cells[Math.floor(cells.length/2)]);
+        matches.push({ cells, type: grid[r][c].type, sp: sp.type, spPos });
+      }
+    }
+  }
+  
+  return matches;
+}
+
+function findConnected(startR, startC, type, visited) {
+  const cells = [];
+  const queue = [[startR, startC]];
+  const inQ = new Set([`${startR},${startC}`]);
+  
+  while (queue.length) {
+    const [r, c] = queue.shift();
+    if (visited[r][c]) continue;
+    
+    // Check if part of 3+ line
+    let hLen = 1, vLen = 1;
+    for (let i = c-1; i >= 0 && grid[r][i].type === type; i--) hLen++;
+    for (let i = c+1; i < COLS && grid[r][i].type === type; i++) hLen++;
+    for (let i = r-1; i >= 0 && grid[i][c].type === type; i--) vLen++;
+    for (let i = r+1; i < ROWS && grid[i][c].type === type; i++) vLen++;
+    
+    if (hLen < 3 && vLen < 3) continue;
+    
+    visited[r][c] = true;
+    cells.push([r, c]);
+    
+    [[r-1,c], [r+1,c], [r,c-1], [r,c+1]].forEach(([nr, nc]) => {
+      const key = `${nr},${nc}`;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && 
+          !visited[nr][nc] && !inQ.has(key) && grid[nr][nc].type === type) {
+        queue.push([nr, nc]);
+        inQ.add(key);
+      }
+    });
+  }
+  return cells;
+}
+
+function determineSpecial(cells) {
+  if (cells.length < 4) return { type: SP.NONE };
+  
+  // Check for 5 in a line -> RAINBOW
+  const rows = {}, cols = {};
+  cells.forEach(([r,c]) => {
+    (rows[r] = rows[r] || []).push(c);
+    (cols[c] = cols[c] || []).push(r);
+  });
+  
+  let maxLine = 0;
+  Object.values(rows).forEach(arr => { arr.sort((a,b)=>a-b); let l=1; for(let i=1;i<arr.length;i++){if(arr[i]===arr[i-1]+1)l++;else l=1;maxLine=Math.max(maxLine,l);} });
+  Object.values(cols).forEach(arr => { arr.sort((a,b)=>a-b); let l=1; for(let i=1;i<arr.length;i++){if(arr[i]===arr[i-1]+1)l++;else l=1;maxLine=Math.max(maxLine,l);} });
+  
+  if (maxLine >= 5) return { type: SP.RAINBOW };
+  if (cells.length >= 6) return { type: SP.RAINBOW }; // Big L/T with tail -> RAINBOW
+  if (cells.length >= 5) return { type: SP.BOMB }; // L/T shape
+  
+  // 4 in line -> LINE (perpendicular)
+  if (cells.length === 4) {
+    const rowSet = new Set(cells.map(([r])=>r));
+    const colSet = new Set(cells.map(([,c])=>c));
+    if (rowSet.size === 1) return { type: SP.LINE_V };
+    if (colSet.size === 1) return { type: SP.LINE_H };
+  }
+  
+  return { type: SP.NONE };
+}
+
+// ==================== MATCH PROCESSING ====================
+async function processMatches() {
+  let combo = 0;
+  
+  while (true) {
+    const matches = findMatches();
+    if (!matches.length) break;
+    
+    combo++;
+    const toClear = new Set();
+    const toCreate = [];
+    
+    for (const m of matches) {
+      m.cells.forEach(([r,c]) => toClear.add(`${r},${c}`));
+      if (m.sp !== SP.NONE) {
+        toCreate.push({ pos: m.spPos, sp: m.sp, type: m.type });
+      }
+    }
+    
+    // Score
+    score += Math.floor(toClear.size * 10 * (1 + (combo-1) * 0.5));
+    updateUI();
+    
+    // Trigger existing specials being cleared
+    const spPosSet = new Set(toCreate.map(x => `${x.pos[0]},${x.pos[1]}`));
+    
+    for (const key of toClear) {
+      if (spPosSet.has(key)) continue;
+      const [r, c] = key.split(',').map(Number);
+      if (grid[r][c].sp !== SP.NONE) {
+        await activateSpecial(r, c);
+      }
+    }
+    
+    // Blink and clear
+    await blinkAndClear([...toClear].map(k => k.split(',').map(Number)), spPosSet);
+    
+    // Create new specials
+    for (const { pos, sp, type } of toCreate) {
+      const [r, c] = pos;
+      grid[r][c] = { type: sp === SP.RAINBOW ? -2 : type, sp, freeze: FREEZE.NONE };
+    }
+    
+    // Reduce freeze on neighbors
+    for (const key of toClear) {
+      const [r, c] = key.split(',').map(Number);
+      [[r-1,c],[r+1,c],[r,c-1],[r,c+1]].forEach(([nr,nc]) => {
+        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+          if (grid[nr][nc].freeze === FREEZE.HEAVY) grid[nr][nc].freeze = FREEZE.LIGHT;
+          else if (grid[nr][nc].freeze === FREEZE.LIGHT) grid[nr][nc].freeze = FREEZE.NONE;
+        }
+      });
+    }
+    
+    await drop();
+  }
+}
+
+async function blinkAndClear(cells, skipSet) {
+  // Blink 3 times
+  for (let i = 0; i < 3; i++) {
+    blinkCells = cells;
+    await sleep(100);
+    blinkCells = [];
+    await sleep(100);
+  }
+  
+  // Clear or unfreeze
+  for (const [r, c] of cells) {
+    if (skipSet.has(`${r},${c}`)) continue;
+    
+    const cell = grid[r][c];
+    if (cell.freeze === FREEZE.HEAVY) {
+      // Heavy -> Light (don't clear)
+      grid[r][c].freeze = FREEZE.LIGHT;
+    } else if (cell.freeze === FREEZE.LIGHT) {
+      // Light -> None (don't clear)
+      grid[r][c].freeze = FREEZE.NONE;
+    } else {
+      // Not frozen - clear
+      grid[r][c] = { type: -1, sp: SP.NONE, freeze: FREEZE.NONE };
+    }
+  }
+}
+
+// ==================== SPECIAL ACTIVATION ====================
+async function activateSpecial(r, c) {
+  const cell = grid[r][c];
+  const sp = cell.sp;
+  const toClear = [[r, c]];
+  
+  if (sp === SP.LINE_H) {
+    for (let i = 0; i < COLS; i++) if (grid[r][i].type !== -1) toClear.push([r, i]);
+  } else if (sp === SP.LINE_V) {
+    for (let i = 0; i < ROWS; i++) if (grid[i][c].type !== -1) toClear.push([i, c]);
+  } else if (sp === SP.BOMB) {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc].type !== -1) {
+          toClear.push([nr, nc]);
+        }
+      }
+    }
+  } else if (sp === SP.PLANE) {
+    const targets = [];
+    for (let i = 0; i < ROWS; i++) for (let j = 0; j < COLS; j++) {
+      if (grid[i][j].type >= 0 && !(i === r && j === c)) targets.push([i, j]);
+    }
+    if (targets.length) {
+      const [tr, tc] = targets[randInt(targets.length)];
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const nr = tr + dr, nc = tc + dc;
+          if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc].type !== -1) {
+            toClear.push([nr, nc]);
+          }
+        }
+      }
+    }
+  } else if (sp === SP.RAINBOW) {
+    // Chain activation - eat random type
+    const targetType = randInt(TYPES);
+    for (let i = 0; i < ROWS; i++) for (let j = 0; j < COLS; j++) {
+      if (grid[i][j].type === targetType) toClear.push([i, j]);
+    }
+  }
+  
+  // Remember specials BEFORE clearing (only unfrozen ones will chain)
+  const chainTargets = [];
+  const chainSkip = new Set();
+  for (const [cr, cc] of toClear) {
+    if ((cr !== r || cc !== c) && grid[cr][cc].sp !== SP.NONE && grid[cr][cc].freeze === FREEZE.NONE) {
+      chainTargets.push([cr, cc]);
+      chainSkip.add(`${cr},${cc}`);
+    }
+  }
+  
+  score += toClear.length * 15;
+  updateUI();
+  
+  await blinkAndClear(toClear, chainSkip);
+  
+  // Trigger chain reactions with drop after each
+  for (const [cr, cc] of chainTargets) {
+    if (grid[cr][cc].type === -1 || grid[cr][cc].sp === SP.NONE) continue;
+    await activateSpecial(cr, cc);
+    await drop();
+  }
+}
+
+async function handleSpecialCombo(r1, c1, r2, c2) {
+  const a = grid[r1][c1], b = grid[r2][c2];
+  const s1 = a.sp, s2 = b.sp;
+  const toClear = [];
+  
+  // Rainbow + Rainbow = clear all
+  if (s1 === SP.RAINBOW && s2 === SP.RAINBOW) {
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) toClear.push([r, c]);
+    score += 500;
+  }
+  // Rainbow + other special = convert all of random type to that special
+  else if (s1 === SP.RAINBOW || s2 === SP.RAINBOW) {
+    const other = s1 === SP.RAINBOW ? b : a;
+    const targetType = randInt(TYPES);
+    const targets = [];
+    
+    for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+      if (grid[r][c].type === targetType) targets.push([r, c]);
+    }
+    
+    // Clear rainbow and other
+    grid[r1][c1] = grid[r2][c2] = { type: -1, sp: SP.NONE, freeze: FREEZE.NONE };
+    
+    // Convert to specials (randomize LINE direction)
+    for (const [r, c] of targets) {
+      let sp = other.sp;
+      if (sp === SP.LINE_H || sp === SP.LINE_V) {
+        sp = Math.random() < 0.5 ? SP.LINE_H : SP.LINE_V;
+      }
+      grid[r][c].sp = sp;
+    }
+    await sleep(150);
+    
+    // Activate all with drop after each
+    for (const [r, c] of targets) {
+      if (grid[r][c].type === -1 || grid[r][c].sp === SP.NONE) continue;
+      await activateSpecial(r, c);
+      await drop();
+    }
+    return;
+  }
+  // LINE + LINE = cross
+  else if ((s1 === SP.LINE_H || s1 === SP.LINE_V) && (s2 === SP.LINE_H || s2 === SP.LINE_V)) {
+    for (let i = 0; i < COLS; i++) toClear.push([r1, i], [r2, i]);
+    for (let i = 0; i < ROWS; i++) toClear.push([i, c1], [i, c2]);
+  }
+  // LINE + BOMB = 3-wide cross
+  else if ((s1 === SP.BOMB || s2 === SP.BOMB) && 
+           (s1 === SP.LINE_H || s1 === SP.LINE_V || s2 === SP.LINE_H || s2 === SP.LINE_V)) {
+    const cr = Math.floor((r1+r2)/2), cc = Math.floor((c1+c2)/2);
+    for (let i = 0; i < COLS; i++) for (let d = -1; d <= 1; d++) if (cr+d >= 0 && cr+d < ROWS) toClear.push([cr+d, i]);
+    for (let i = 0; i < ROWS; i++) for (let d = -1; d <= 1; d++) if (cc+d >= 0 && cc+d < COLS) toClear.push([i, cc+d]);
+  }
+  // BOMB + BOMB = 5x5
+  else if (s1 === SP.BOMB && s2 === SP.BOMB) {
+    const cr = Math.floor((r1+r2)/2), cc = Math.floor((c1+c2)/2);
+    for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+      const nr = cr+dr, nc = cc+dc;
+      if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) toClear.push([nr, nc]);
+    }
+  }
+  // PLANE + anything = multiple planes
+  else if (s1 === SP.PLANE || s2 === SP.PLANE) {
+    const numPlanes = (s1 === SP.PLANE && s2 === SP.PLANE) ? 3 : 2;
+    grid[r1][c1] = grid[r2][c2] = { type: -1, sp: SP.NONE, freeze: FREEZE.NONE };
+    
+    for (let p = 0; p < numPlanes; p++) {
+      const targets = [];
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (grid[r][c].type >= 0) targets.push([r, c]);
+      }
+      if (!targets.length) break;
+      
+      const [tr, tc] = targets[randInt(targets.length)];
+      const blast = [];
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const nr = tr+dr, nc = tc+dc;
+        if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && grid[nr][nc].type !== -1) blast.push([nr, nc]);
+      }
+      await blinkAndClear(blast, new Set());
+      await sleep(100);
+    }
+    return;
+  }
+  
+  if (toClear.length) {
+    // Check chains
+    const chains = [];
+    for (const [r, c] of toClear) {
+      if (grid[r][c].sp !== SP.NONE && !((r===r1&&c===c1)||(r===r2&&c===c2))) {
+        chains.push([r, c]);
+      }
+    }
+    
+    score += toClear.length * 15;
+    updateUI();
+    await blinkAndClear(toClear, new Set());
+    
+    for (const [r, c] of chains) {
+      if (grid[r][c].type === -1) continue;
+      await activateSpecial(r, c);
+    }
+  }
+}
+
+async function clearColor(type, rainbowR, rainbowC) {
+  const toClear = [[rainbowR, rainbowC]];
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+    if (grid[r][c].type === type) toClear.push([r, c]);
+  }
+  score += toClear.length * 20;
+  updateUI();
+  await blinkAndClear(toClear, new Set());
+}
+
+// ==================== DROP & FILL ====================
+async function drop() {
+  let moved = true;
+  while (moved) {
+    moved = false;
+    for (let c = 0; c < COLS; c++) {
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (grid[r][c].type === -1) {
+          for (let above = r - 1; above >= 0; above--) {
+            if (grid[above][c].type !== -1) {
+              grid[r][c] = grid[above][c];
+              grid[above][c] = { type: -1, sp: SP.NONE, freeze: FREEZE.NONE };
+              moved = true;
+              break;
+            }
+          }
+        }
+      }
+      // Fill from top
+      for (let r = 0; r < ROWS; r++) {
+        if (grid[r][c].type === -1) {
+          grid[r][c] = { type: randInt(TYPES), sp: SP.NONE, freeze: FREEZE.NONE };
+          moved = true;
+        }
+      }
+    }
+    await sleep(50);
+  }
+}
+
+// ==================== RENDER ====================
+function gameLoop() {
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  const blinkSet = new Set(blinkCells.map(([r,c]) => `${r},${c}`));
+  
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const cell = grid[r][c];
+      if (cell.type === -1) continue;
+      
+      const x = c * CELL + CELL/2;
+      const y = r * CELL + CELL/2;
+      const rad = CELL * 0.38;
+      
+      // Blink effect - skip drawing
+      if (blinkSet.has(`${r},${c}`)) continue;
+      
+      // Freeze background
+      if (cell.freeze) {
+        if (cell.freeze === FREEZE.HEAVY) {
+          // Heavy ice - darker, with border and pattern
+          ctx.fillStyle = 'rgba(50,130,220,0.6)';
+          ctx.fillRect(c * CELL + 2, r * CELL + 2, CELL - 4, CELL - 4);
+          ctx.strokeStyle = 'rgba(30,100,180,0.8)';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(c * CELL + 3, r * CELL + 3, CELL - 6, CELL - 6);
+          // Cross pattern
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(c * CELL + 6, r * CELL + 6);
+          ctx.lineTo(c * CELL + CELL - 6, r * CELL + CELL - 6);
+          ctx.moveTo(c * CELL + CELL - 6, r * CELL + 6);
+          ctx.lineTo(c * CELL + 6, r * CELL + CELL - 6);
+          ctx.stroke();
+        } else {
+          // Light ice - subtle
+          ctx.fillStyle = 'rgba(150,210,255,0.3)';
+          ctx.fillRect(c * CELL + 2, r * CELL + 2, CELL - 4, CELL - 4);
+        }
+      }
+      
+      // Draw based on special type
+      if (cell.sp === SP.RAINBOW) {
+        drawRainbow(x, y, rad);
+      } else if (cell.sp === SP.LINE_H || cell.sp === SP.LINE_V) {
+        drawLine(x, y, rad, cell.sp === SP.LINE_H);
+      } else if (cell.sp === SP.BOMB) {
+        drawBomb(x, y, rad, cell.type >= 0 ? COLORS[cell.type] : '#888');
+      } else if (cell.sp === SP.PLANE) {
+        drawPlane(x, y, rad, cell.type >= 0 ? COLORS[cell.type] : '#888');
+      } else if (cell.type >= 0) {
+        ctx.fillStyle = COLORS[cell.type];
+        drawShape(x, y, rad, cell.type);
+      }
+      
+      // Selection
+      if (selected && selected.r === r && selected.c === c) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(c * CELL + 3, r * CELL + 3, CELL - 6, CELL - 6);
+      }
+    }
+  }
+}
+
+function drawShape(x, y, r, type) {
+  ctx.beginPath();
+  switch (type) {
+    case 0: ctx.arc(x, y, r, 0, Math.PI * 2); break;
+    case 1: ctx.rect(x - r*0.8, y - r*0.8, r*1.6, r*1.6); break;
+    case 2: ctx.moveTo(x, y-r); ctx.lineTo(x+r*0.9, y+r*0.7); ctx.lineTo(x-r*0.9, y+r*0.7); ctx.closePath(); break;
+    case 3: ctx.moveTo(x, y-r); ctx.lineTo(x+r*0.75, y); ctx.lineTo(x, y+r); ctx.lineTo(x-r*0.75, y); ctx.closePath(); break;
+    case 4: for(let i=0;i<6;i++){const a=(i*60-30)*Math.PI/180;const px=x+Math.cos(a)*r*0.85;const py=y+Math.sin(a)*r*0.85;i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);}ctx.closePath();break;
+    case 5: for(let i=0;i<5;i++){const oa=(i*72-90)*Math.PI/180;const ia=(i*72+36-90)*Math.PI/180;ctx.lineTo(x+Math.cos(oa)*r,y+Math.sin(oa)*r);ctx.lineTo(x+Math.cos(ia)*r*0.4,y+Math.sin(ia)*r*0.4);}ctx.closePath();break;
+  }
+  ctx.fill();
+}
+
+function drawRainbow(x, y, r) {
+  const grad = ctx.createLinearGradient(x-r, y-r, x+r, y+r);
+  COLORS.forEach((c, i) => grad.addColorStop(i / (COLORS.length-1), c));
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  for(let i=0;i<6;i++){const oa=(i*60-90)*Math.PI/180;const ia=(i*60+30-90)*Math.PI/180;ctx.lineTo(x+Math.cos(oa)*r*0.6,y+Math.sin(oa)*r*0.6);ctx.lineTo(x+Math.cos(ia)*r*0.25,y+Math.sin(ia)*r*0.25);}
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawLine(x, y, r, horiz) {
+  const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+  grad.addColorStop(0, '#fff');
+  grad.addColorStop(1, '#5af');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x - r*0.85, y - r*0.85, r*1.7, r*1.7);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  if (horiz) {
+    ctx.moveTo(x-r*0.5, y); ctx.lineTo(x+r*0.5, y);
+    ctx.moveTo(x-r*0.3, y-r*0.2); ctx.lineTo(x-r*0.5, y); ctx.lineTo(x-r*0.3, y+r*0.2);
+    ctx.moveTo(x+r*0.3, y-r*0.2); ctx.lineTo(x+r*0.5, y); ctx.lineTo(x+r*0.3, y+r*0.2);
+  } else {
+    ctx.moveTo(x, y-r*0.5); ctx.lineTo(x, y+r*0.5);
+    ctx.moveTo(x-r*0.2, y-r*0.3); ctx.lineTo(x, y-r*0.5); ctx.lineTo(x+r*0.2, y-r*0.3);
+    ctx.moveTo(x-r*0.2, y+r*0.3); ctx.lineTo(x, y+r*0.5); ctx.lineTo(x+r*0.2, y+r*0.3);
+  }
+  ctx.stroke();
+}
+
+function drawBomb(x, y, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, r*0.5, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, r*0.2, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+function drawPlane(x, y, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.moveTo(x + r*0.5, y);
+  ctx.lineTo(x - r*0.4, y - r*0.35);
+  ctx.lineTo(x - r*0.15, y);
+  ctx.lineTo(x - r*0.4, y + r*0.35);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// ==================== UI & PERSISTENCE ====================
+function updateUI() {
+  document.getElementById('level').textContent = level;
+  document.getElementById('score').textContent = score;
+  document.getElementById('goal').textContent = goal;
+  document.getElementById('moves').textContent = moves;
+}
+
+function checkEnd() {
+  if (score >= goal) {
+    document.getElementById('overlayTitle').textContent = 'Уровень пройден!';
+    document.getElementById('overlayText').textContent = `Очки: ${score}`;
+    document.getElementById('overlayBtn').textContent = 'Далее';
+    document.getElementById('overlay').classList.remove('hidden');
+    return true;
+  } else if (moves <= 0) {
+    document.getElementById('overlayTitle').textContent = 'Ходы кончились';
+    document.getElementById('overlayText').textContent = `${score} / ${goal}`;
+    document.getElementById('overlayBtn').textContent = 'Заново';
+    document.getElementById('overlay').classList.remove('hidden');
+    return true;
+  }
+  return false;
+}
+
+async function checkEndOrShuffle() {
+  if (checkEnd()) return;
+  
+  // Auto-shuffle if no valid moves
+  if (!hasValidMoves() && moves > 0) {
+    await sleep(300);
+    // Show brief message
+    const btn = document.getElementById('shuffleBtn');
+    btn.textContent = 'Нет ходов...';
+    await sleep(500);
+    btn.textContent = 'Перемешать';
+    await shuffleBoard();
+  }
+}
+
+function saveProgress() { localStorage.setItem('zenMatch', JSON.stringify({ level })); }
+function loadProgress() { try { level = JSON.parse(localStorage.getItem('zenMatch'))?.level || 1; } catch(e) { level = 1; } }
+
+// ==================== VALID MOVES CHECK ====================
+function hasValidMoves() {
+  // Any unfrozen special = valid move (can tap)
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c].sp !== SP.NONE && grid[r][c].freeze === FREEZE.NONE) return true;
+    }
+  }
+  
+  // Check swaps that would create matches
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c].freeze !== FREEZE.NONE) continue;
+      
+      // Try swap right
+      if (c < COLS - 1 && grid[r][c+1].freeze === FREEZE.NONE) {
+        swap(r, c, r, c+1);
+        if (findMatches().length > 0) { swap(r, c, r, c+1); return true; }
+        swap(r, c, r, c+1);
+      }
+      // Try swap down
+      if (r < ROWS - 1 && grid[r+1][c].freeze === FREEZE.NONE) {
+        swap(r, c, r+1, c);
+        if (findMatches().length > 0) { swap(r, c, r+1, c); return true; }
+        swap(r, c, r+1, c);
+      }
+    }
+  }
+  return false;
+}
+
+async function shuffleBoard() {
+  if (animating) return;
+  animating = true;
+  moves--;
+  updateUI();
+  
+  // Collect all non-frozen, non-special tiles
+  const tiles = [];
+  const positions = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c].freeze === FREEZE.NONE && grid[r][c].sp === SP.NONE && grid[r][c].type >= 0) {
+        tiles.push(grid[r][c].type);
+        positions.push([r, c]);
+      }
+    }
+  }
+  
+  // Shuffle tiles
+  for (let i = tiles.length - 1; i > 0; i--) {
+    const j = randInt(i + 1);
+    [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
+  }
+  
+  // Place back
+  for (let i = 0; i < positions.length; i++) {
+    const [r, c] = positions[i];
+    grid[r][c].type = tiles[i];
+  }
+  
+  // Blink effect
+  blinkCells = positions;
+  await sleep(150);
+  blinkCells = [];
+  await sleep(100);
+  
+  // Process any accidental matches
+  await processMatches();
+  
+  // If still no moves, shuffle again (rare)
+  if (!hasValidMoves() && moves > 0) {
+    await shuffleBoard();
+  }
+  
+  checkEnd();
+  animating = false;
+}
+
+// ==================== UTILS ====================
+function randInt(n) { return Math.floor(Math.random() * n); }
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ==================== START ====================
+window.onload = init;
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
