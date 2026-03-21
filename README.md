@@ -1,12 +1,73 @@
 # Zen Match
 
-Казуальная match-3 игра для мобильных устройств. PWA, работает офлайн.
+Casual match-3 mobile game. PWA, works offline.
 
-## Играть
+[🇬🇧 English](#english) | [🇷🇺 Русский](#русский)
+
+---
+
+## English
+
+### Play
+
+Open `www/index.html` in browser or install as PWA on your phone.
+
+### Mechanics
+
+**Basic:**
+- Swipe to swap adjacent pieces
+- Three or more in a row — removed
+- Cascades with score multiplier
+
+**Special blocks:**
+
+| Combination | Block | Effect |
+|-------------|-------|--------|
+| 4 in a row | Line | Clears row or column |
+| L or T (5 cells) | Bomb | Explodes 3×3 |
+| Large L/T (6+ cells) | Rainbow | Clears all pieces of one color |
+| 5 in a line | Rainbow | Same |
+| 2×2 square | Plane | Flies to random target, explodes 3×3 |
+
+**Special combos:**
+
+| Combo | Effect |
+|-------|--------|
+| Line + Line | Cross |
+| Line + Bomb | 3-wide cross |
+| Bomb + Bomb | 5×5 explosion |
+| Plane + Plane | 3 planes |
+| Rainbow + piece | All pieces of that color |
+| Rainbow + special | All pieces of random color become that special and activate |
+| Rainbow + Rainbow | Entire board |
+
+**Ice:**
+- Appears from level 2
+- Light ice (1 layer) — one hit to thaw
+- Heavy ice (2 layers) — two hits needed
+- Frozen pieces participate in matches
+
+**Balance:**
+- Moves and goal grow by √level
+- Difficulty stabilizes, game gets longer
+
+### Tech
+
+- Vanilla JS, Canvas 2D
+- PWA with Service Worker for offline
+- localStorage for progress
+- Auto ru/en localization
+- No dependencies, single HTML file
+
+---
+
+## Русский
+
+### Играть
 
 Открыть `www/index.html` в браузере или установить как PWA на телефон.
 
-## Механики
+### Механики
 
 **Базовые:**
 - Свайп для обмена соседних фигур
@@ -42,33 +103,36 @@
 - Замороженные фигуры участвуют в матчах
 
 **Баланс:**
-- Ходы и цель растут по корню от уровня
+- Ходы и цель растут по √level
 - Сложность стабилизируется, игра становится длиннее
 
-## Технологии
+### Технологии
 
 - Vanilla JS, Canvas 2D
 - PWA с Service Worker для офлайна
 - localStorage для сохранения прогресса
+- Автолокализация ru/en
 - Без зависимостей, один HTML-файл
 
-## Сборка APK (Android)
+---
 
-```bash
-npm install -g @anthropic/anthropic-capacitor
-npx cap init ZenMatch com.zenmatch.game
-npx cap add android
-npx cap copy
-cd android
-./gradlew assembleDebug
+## Structure / Структура
+
+```
+www/
+  index.html    — game / игра
+  sw.js         — Service Worker
+  manifest.json — PWA manifest
+  icon-192.png  — icon
+  icon-512.png  — icon
 ```
 
-APK: `android/app/build/outputs/apk/debug/app-debug.apk`
+## History / История
 
-## История
+Created in one evening chatting with Claude after Yandex Plus casual game shutdown. 22 iterations from prototype to balanced game.
 
-Создано за один вечер в диалоге с Claude после закрытия казуалки в Яндекс Плюсе. 21 итерация от прототипа до сбалансированной игры.
+Создано за один вечер в диалоге с Claude после закрытия казуалки в Яндекс Плюсе. 22 итерации от прототипа до сбалансированной игры.
 
-## Лицензия
+## License / Лицензия
 
 MIT

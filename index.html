@@ -70,18 +70,18 @@
   <div id="header">
     <h1>ZEN MATCH</h1>
     <div id="stats">
-      <span><span class="stat-label">Уровень</span><br><span id="level">1</span></span>
-      <span><span class="stat-label">Очки</span><br><span id="score">0</span> / <span id="goal">1000</span></span>
-      <span><span class="stat-label">Ходы</span><br><span id="moves">25</span></span>
+      <span><span class="stat-label" data-i18n="level">Level</span><br><span id="level">1</span></span>
+      <span><span class="stat-label" data-i18n="score">Score</span><br><span id="score">0</span> / <span id="goal">1000</span></span>
+      <span><span class="stat-label" data-i18n="moves">Moves</span><br><span id="moves">25</span></span>
     </div>
   </div>
   <div id="canvas-container"><canvas id="game"></canvas></div>
-  <button id="shuffleBtn">Перемешать</button>
-  <div style="margin-top:10px;opacity:0.4;font-size:0.7em;color:#ecf0f1">v21 <span id="resetBtn" style="cursor:pointer;text-decoration:underline">сброс</span></div>
+  <button id="shuffleBtn" data-i18n="shuffle">Shuffle</button>
+  <div style="margin-top:10px;opacity:0.4;font-size:0.7em;color:#ecf0f1">v22 <span id="resetBtn" style="cursor:pointer;text-decoration:underline" data-i18n="reset">reset</span></div>
   <div id="overlay" class="hidden">
-    <h2 id="overlayTitle">Уровень пройден!</h2>
+    <h2 id="overlayTitle"></h2>
     <p id="overlayText"></p>
-    <button id="overlayBtn">Далее</button>
+    <button id="overlayBtn"></button>
   </div>
 
 <script>
@@ -92,6 +92,22 @@ const COLORS = ['#e74c3c', '#2ecc71', '#3498db', '#f39c12', '#9b59b6', '#1abc9c'
 // Special types
 const SP = { NONE: 0, LINE_H: 1, LINE_V: 2, BOMB: 3, PLANE: 4, RAINBOW: 5 };
 const FREEZE = { NONE: 0, LIGHT: 1, HEAVY: 2 };
+
+// ==================== LOCALIZATION ====================
+const i18n = {
+  en: {
+    level: 'Level', score: 'Score', moves: 'Moves', shuffle: 'Shuffle', reset: 'reset',
+    win: 'Level complete!', lose: 'Out of moves', next: 'Next', retry: 'Retry',
+    scoreText: 'Score:', resetConfirm: 'Reset progress and cache?'
+  },
+  ru: {
+    level: 'Уровень', score: 'Очки', moves: 'Ходы', shuffle: 'Перемешать', reset: 'сброс',
+    win: 'Уровень пройден!', lose: 'Ходы кончились', next: 'Далее', retry: 'Заново',
+    scoreText: 'Очки:', resetConfirm: 'Сбросить прогресс и кэш?'
+  }
+};
+const lang = navigator.language.startsWith('ru') ? 'ru' : 'en';
+const t = i18n[lang];
 
 // ==================== STATE ====================
 let canvas, ctx, CELL;
@@ -104,6 +120,7 @@ let blinkCells = [];
 function init() {
   canvas = document.getElementById('game');
   ctx = canvas.getContext('2d');
+  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t[el.dataset.i18n]);
   resize();
   window.addEventListener('resize', resize);
   loadProgress();
@@ -201,7 +218,7 @@ function setupInput() {
   document.getElementById('shuffleBtn').onclick = () => shuffleBoard();
   
   document.getElementById('resetBtn').onclick = async () => {
-    if (confirm('Сбросить прогресс и кэш?')) {
+    if (confirm(t.resetConfirm)) {
       localStorage.clear();
       const regs = await navigator.serviceWorker.getRegistrations();
       for (const reg of regs) await reg.unregister();
@@ -883,15 +900,15 @@ function updateUI() {
 
 function checkEnd() {
   if (score >= goal) {
-    document.getElementById('overlayTitle').textContent = 'Уровень пройден!';
-    document.getElementById('overlayText').textContent = `Очки: ${score}`;
-    document.getElementById('overlayBtn').textContent = 'Далее';
+    document.getElementById('overlayTitle').textContent = t.win;
+    document.getElementById('overlayText').textContent = `${t.scoreText} ${score}`;
+    document.getElementById('overlayBtn').textContent = t.next;
     document.getElementById('overlay').classList.remove('hidden');
     return true;
   } else if (moves <= 0) {
-    document.getElementById('overlayTitle').textContent = 'Ходы кончились';
+    document.getElementById('overlayTitle').textContent = t.lose;
     document.getElementById('overlayText').textContent = `${score} / ${goal}`;
-    document.getElementById('overlayBtn').textContent = 'Заново';
+    document.getElementById('overlayBtn').textContent = t.retry;
     document.getElementById('overlay').classList.remove('hidden');
     return true;
   }
