@@ -77,7 +77,7 @@
   </div>
   <div id="canvas-container"><canvas id="game"></canvas></div>
   <button id="shuffleBtn" data-i18n="shuffle">Shuffle</button>
-  <div style="margin-top:10px;opacity:0.4;font-size:0.7em;color:#ecf0f1">v23 <span id="resetBtn" style="cursor:pointer;text-decoration:underline" data-i18n="reset">reset</span></div>
+  <div style="margin-top:10px;opacity:0.4;font-size:0.7em;color:#ecf0f1">v25 <span id="resetBtn" style="cursor:pointer;text-decoration:underline" data-i18n="reset">reset</span></div>
   <div id="overlay" class="hidden">
     <h2 id="overlayTitle"></h2>
     <p id="overlayText"></p>
@@ -139,19 +139,26 @@ function initLevel() {
   score = 0;
   moves = 20 + Math.floor(Math.sqrt(level) * 4);
   goal = 1000 + Math.floor(Math.sqrt(level) * 1400);
-  grid = [];
   
-  for (let r = 0; r < ROWS; r++) {
-    grid[r] = [];
-    for (let c = 0; c < COLS; c++) {
-      let type;
-      do { type = randInt(TYPES); } while (wouldMatch(r, c, type));
-      const freeze = (level >= 2 && Math.random() < 0.05 + level * 0.015) 
-        ? (level >= 4 && Math.random() < 0.5 ? FREEZE.HEAVY : FREEZE.LIGHT) 
-        : FREEZE.NONE;
-      grid[r][c] = { type, sp: SP.NONE, freeze };
+  // Generate board until valid moves exist
+  let attempts = 0;
+  do {
+    grid = [];
+    for (let r = 0; r < ROWS; r++) {
+      grid[r] = [];
+      for (let c = 0; c < COLS; c++) {
+        let type;
+        do { type = randInt(TYPES); } while (wouldMatch(r, c, type));
+        const freezeChance = Math.min(0.35, 0.05 + level * 0.01);
+        const freeze = (level >= 2 && Math.random() < freezeChance) 
+          ? (level >= 4 && Math.random() < 0.5 ? FREEZE.HEAVY : FREEZE.LIGHT) 
+          : FREEZE.NONE;
+        grid[r][c] = { type, sp: SP.NONE, freeze };
+      }
     }
-  }
+    attempts++;
+  } while (!hasValidMoves() && attempts < 100);
+  
   updateUI();
 }
 
@@ -934,26 +941,32 @@ function loadProgress() { try { level = JSON.parse(localStorage.getItem('zenMatc
 
 // ==================== VALID MOVES CHECK ====================
 function hasValidMoves() {
-  // Any unfrozen special = valid move (can tap)
+  // Any unfrozen tappable special = valid move (RAINBOW can't be tapped)
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      if (grid[r][c].sp !== SP.NONE && grid[r][c].freeze === FREEZE.NONE) return true;
+      if (grid[r][c].sp !== SP.NONE && grid[r][c].sp !== SP.RAINBOW && grid[r][c].freeze === FREEZE.NONE) return true;
     }
   }
   
-  // Check swaps that would create matches
+  // Check swaps that would create matches or activate specials
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       if (grid[r][c].freeze !== FREEZE.NONE) continue;
+      const a = grid[r][c];
       
       // Try swap right
       if (c < COLS - 1 && grid[r][c+1].freeze === FREEZE.NONE) {
+        const b = grid[r][c+1];
+        // Swap with special = valid (activates it)
+        if (a.sp !== SP.NONE || b.sp !== SP.NONE) return true;
         swap(r, c, r, c+1);
         if (findMatches().length > 0) { swap(r, c, r, c+1); return true; }
         swap(r, c, r, c+1);
       }
       // Try swap down
       if (r < ROWS - 1 && grid[r+1][c].freeze === FREEZE.NONE) {
+        const b = grid[r+1][c];
+        if (a.sp !== SP.NONE || b.sp !== SP.NONE) return true;
         swap(r, c, r+1, c);
         if (findMatches().length > 0) { swap(r, c, r+1, c); return true; }
         swap(r, c, r+1, c);

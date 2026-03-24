@@ -129,9 +129,9 @@ www/
 
 ## History / История
 
-Created in one evening chatting with Claude after Yandex Plus casual game shutdown. 22 iterations from prototype to balanced game.
+Created in one evening chatting with Claude after Yandex Plus casual game shutdown. 25 iterations from prototype to balanced game.
 
-Создано за один вечер в диалоге с Claude после закрытия казуалки в Яндекс Плюсе. 22 итерации от прототипа до сбалансированной игры.
+Создано за один вечер в диалоге с Claude после закрытия казуалки в Яндекс Плюсе. 25 итераций от прототипа до сбалансированной игры.
 
 ## License / Лицензия
 

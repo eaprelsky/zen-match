@@ -1,4 +1,4 @@
-const CACHE_NAME = 'zen-match-v23';
+const CACHE_NAME = 'zen-match-v25';
 
 self.addEventListener('install', event => {
   self.skipWaiting();
